@@ -1,0 +1,14 @@
+# Example terraform.tfvars file
+# Copy this file to terraform.tfvars and customize the values
+
+# Azure Configuration
+resource_group_name = "rg-idp-dev"
+location           = "West Europe"
+environment        = "dev"
+project_name       = "identity-platform"
+
+# GitHub Configuration
+github_repo_name        = "idp-infrastructure"
+github_repo_description = "Identity Platform Infrastructure and Configuration"
+github_repo_visibility  = "private"
+github_repo_topics      = ["terraform", "opentofu", "azure", "infrastructure", "iac", "identity-platform"]
