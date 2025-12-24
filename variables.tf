@@ -15,7 +15,7 @@ variable "environment" {
   description = "Environment tag for resources"
   type        = string
   default     = "dev"
-  
+
   validation {
     condition     = contains(["dev", "staging", "prod"], var.environment)
     error_message = "Environment must be one of: dev, staging, prod."
@@ -45,7 +45,7 @@ variable "github_repo_visibility" {
   description = "Visibility of the GitHub repository"
   type        = string
   default     = "private"
-  
+
   validation {
     condition     = contains(["public", "private"], var.github_repo_visibility)
     error_message = "Repository visibility must be either 'public' or 'private'."

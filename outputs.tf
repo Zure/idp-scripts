@@ -36,8 +36,8 @@ output "github_repo_url" {
 }
 
 output "github_repo_clone_url" {
-  description = "Clone URL for the GitHub repository"
-  value       = github_repository.main.clone_url
+  description = "HTTPS clone URL for the GitHub repository"
+  value       = github_repository.main.http_clone_url
 }
 
 output "github_repo_ssh_clone_url" {
