@@ -3,11 +3,15 @@ kind: CloudResource
 metadata:
   name: idp-dev-resources
 spec:
-  # Reference the configuration
-  configurationRef:
-    name: idp-module
+  # Reference the plan (gets latest version of idp-infrastructure)
+  # This is the modern, recommended approach
+  plan:
+    name: idp-infrastructure
   
-  # Override variables
+  # Or reference a specific revision version:
+  # revision: v1.0.0
+  
+  # Provide values for the exposed inputs
   variables:
     resource_group_name: "rg-idp-terranetes-dev"
     location: "West Europe"
@@ -19,7 +23,3 @@ spec:
   
   # Terraform execution settings
   enableAutoApproval: false  # Set to true to auto-approve plans
-  
-  # Write connection details to a secret (optional)
-  writeConnectionSecretToRef:
-    name: idp-connection-details

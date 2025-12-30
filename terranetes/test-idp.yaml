@@ -1,0 +1,119 @@
+---
+apiVersion: terraform.appvia.io/v1alpha1
+kind: Revision
+metadata:
+  name: test-idp-v0.0.1
+  annotations:
+    terranetes.appvia.io/tnctl.version: v0.5.6
+spec:
+  ## Contains metadata around the package, it's use, version
+  ## and description
+  plan:
+    ## Is the name of the plan this revision is part-of. Revisions are
+    ## grouped together by spec.plan.name to create a plan.
+    name: test-idp
+    ## Provides the user with a collection of categories this plan
+    ## provides.
+    categories: []
+    ## Is a human readable description of the plan and what the cloud
+    ## resource provides.
+    description: ADD DESCRIPTION
+    ## Is the semvar version of this revision
+    revision: v0.0.1
+    ## Is a changelog of the changes made in this revision
+    changeLog: ADD CHANGELOG
+
+  ## Inputs dictate the variables which the consumer is permitted, or
+  ## required to provide. It is best to keep this to a minimum; so a developer
+  ## needn't be concerned with the inner workings of the module, just the
+  ## contextual requirements, i.e database name, size etc.
+  inputs:
+    - ## Key is the name of the variable in the terraform module
+      key: github_repo_visibility
+      ## Description is a human readable description of the variable
+      description: Visibility of the GitHub repository
+      ## Provides a default value, this can be a simple or complex type
+      default: 
+        example: string
+        value: private
+        
+      ## Is the format for the input
+      type: string
+    - ## Key is the name of the variable in the terraform module
+      key: resource_group_name
+      ## Description is a human readable description of the variable
+      description: Name of the Azure Resource Group
+      ## Provides a default value, this can be a simple or complex type
+      default: 
+        example: string
+        value: rg-idp-dev
+        
+      ## Is the format for the input
+      type: string
+    - ## Key is the name of the variable in the terraform module
+      key: location
+      ## Description is a human readable description of the variable
+      description: Azure region for the Resource Group
+      ## Provides a default value, this can be a simple or complex type
+      default: 
+        example: string
+        value: West Europe
+        
+      ## Is the format for the input
+      type: string
+    - ## Key is the name of the variable in the terraform module
+      key: environment
+      ## Description is a human readable description of the variable
+      description: Environment tag for resources
+      ## Provides a default value, this can be a simple or complex type
+      default: 
+        example: string
+        value: dev
+        
+      ## Is the format for the input
+      type: string
+    - ## Key is the name of the variable in the terraform module
+      key: project_name
+      ## Description is a human readable description of the variable
+      description: Project name for tagging and naming resources
+      ## Provides a default value, this can be a simple or complex type
+      default: 
+        example: string
+        value: identity-platform
+        
+      ## Is the format for the input
+      type: string
+    - ## Key is the name of the variable in the terraform module
+      key: github_repo_name
+      ## Description is a human readable description of the variable
+      description: Name of the GitHub repository
+      ## Provides a default value, this can be a simple or complex type
+      default: 
+        example: string
+        value: idp-infrastructure
+        
+      ## Is the format for the input
+      type: string
+    - ## Key is the name of the variable in the terraform module
+      key: github_repo_description
+      ## Description is a human readable description of the variable
+      description: Description of the GitHub repository
+      ## Provides a default value, this can be a simple or complex type
+      default: 
+        example: string
+        value: Identity Platform Infrastructure and Configuration
+        
+      ## Is the format for the input
+      type: string
+
+  ## Configuration is the template for the resource; the final cloud resource
+  ## will be a combination of user defined variables above and the template
+  ## provided below
+  configuration:
+    ## Is the location of the terraform module; this can be a git repository,
+    ## terraform registry and so forth.
+    module: https://github.com/Zure/idp-scripts
+
+    ## Is the name of the secret contains the outputs from the terraform module
+    writeConnectionSecretToRef:
+      name: test-idp
