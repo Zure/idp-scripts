@@ -1,0 +1,19 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: terranetes
+nodes:
+- role: control-plane
+  extraPortMappings:
+  # Allow accessing services via NodePort
+  - containerPort: 30000
+    hostPort: 30000
+    protocol: TCP
+  - containerPort: 30001
+    hostPort: 30001
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true"

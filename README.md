@@ -10,9 +10,46 @@ This configuration creates:
 
 The state is stored remotely in Azure Storage for team collaboration and state locking.
 
+## Deployment Options
+
+This repository supports multiple deployment methods:
+
+1. **Traditional Terraform/OpenTofu** - Direct deployment using CLI
+2. **Terranetes** - Kubernetes-native Terraform controller for GitOps workflows
+
+Choose the method that best fits your workflow:
+- Use **Traditional** for simple, direct deployments
+- Use **Terranetes** for Kubernetes-based environments, GitOps, and platform engineering
+
 ## Quick Start
 
-### Prerequisites
+### Option A: Terranetes Deployment (Kubernetes-Native)
+
+Deploy your infrastructure using Terranetes in a Kubernetes cluster for GitOps workflows and platform engineering.
+
+**📚 [Complete Terranetes Guide](TERRANETES_GUIDE.md)** - Comprehensive step-by-step guide
+
+**Quick Setup:**
+```bash
+cd terranetes
+./setup-complete.sh  # Sets up Kind cluster, Terranetes, and CLI
+./deploy.sh          # Deploys the infrastructure
+```
+
+**What you get:**
+- Kubernetes-native infrastructure management
+- GitOps-ready deployments
+- Multi-tenant resource provisioning
+- Policy enforcement and compliance
+- State management in Kubernetes
+
+See the [Terranetes Guide](TERRANETES_GUIDE.md) for detailed instructions.
+
+---
+
+### Option B: Traditional Terraform/OpenTofu Deployment
+
+#### Prerequisites
 
 1. **OpenTofu or Terraform**: Install one of these tools
    ```bash
@@ -290,6 +327,16 @@ tofu destroy
 3. **GitHub Repository Already Exists**:
    - Choose a different repository name
    - Or import existing repository: `tofu import github_repository.main {owner}/{repo-name}`
+
+For Terranetes-specific troubleshooting, see the [Terranetes Guide](TERRANETES_GUIDE.md#troubleshooting).
+
+## Documentation
+
+- **[TERRANETES_GUIDE.md](TERRANETES_GUIDE.md)** - Complete guide for Kubernetes-native deployments with Terranetes
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** - Detailed getting started guide for traditional deployment
+- **[AZURE_BACKEND_SETUP.md](AZURE_BACKEND_SETUP.md)** - Azure backend configuration details
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick command reference
+- **[terranetes/README.md](terranetes/README.md)** - Terranetes manifests and deployment scripts
 
 ## Contributing
 

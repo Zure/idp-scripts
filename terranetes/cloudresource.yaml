@@ -1,0 +1,29 @@
+apiVersion: terraform.appvia.io/v1alpha1
+kind: CloudResource
+metadata:
+  name: idp-dev-resources
+spec:
+  # Reference the configuration
+  configurationRef:
+    name: idp-module
+  
+  # Override variables for this environment
+  variables:
+    resource_group_name: "rg-idp-terranetes-dev"
+    location: "West Europe"
+    environment: "dev"
+    project_name: "identity-platform"
+    github_repo_name: "idp-infrastructure-terranetes"
+    github_repo_description: "Identity Platform Infrastructure deployed via Terranetes"
+    github_repo_visibility: "private"
+  
+  # Terraform execution settings
+  enableAutoApproval: false  # Set to true to skip manual approval
+  
+  # Write connection details and outputs to a secret
+  writeConnectionSecretToRef:
+    name: idp-connection-details
+    namespace: default
+  
+  # Optional: Resource management
+  destroyOnDelete: true  # Destroy resources when CloudResource is deleted

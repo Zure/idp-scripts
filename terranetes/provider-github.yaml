@@ -1,0 +1,10 @@
+apiVersion: terraform.appvia.io/v1alpha1
+kind: Provider
+metadata:
+  name: github
+spec:
+  source: integrations/github
+  version: "~> 6.0"
+  # Reference the GitHub credentials secret
+  preloadSecrets:
+    - github-credentials

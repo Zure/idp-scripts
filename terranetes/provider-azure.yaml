@@ -1,0 +1,10 @@
+apiVersion: terraform.appvia.io/v1alpha1
+kind: Provider
+metadata:
+  name: azurerm
+spec:
+  source: hashicorp/azurerm
+  version: "~> 4.0"
+  # Reference the Azure credentials secret
+  preloadSecrets:
+    - azure-credentials
