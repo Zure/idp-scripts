@@ -3,23 +3,16 @@ kind: CloudResource
 metadata:
   name: idp-dev-resources
 spec:
-  # Reference the plan (gets latest version of idp-infrastructure)
-  # This is the modern, recommended approach
   plan:
-    name: idp-infrastructure
-  
-  # Or reference a specific revision version:
-  # revision: v1.0.0
-  
-  # Provide values for the exposed inputs
+    name: test-idp
+    revision: v0.0.1  
+  providerRef:
+    name: azure
   variables:
-    resource_group_name: "rg-idp-terranetes-dev"
+    resource_group_name: "rg-idp-terranetes-dev2"
     location: "West Europe"
     environment: "dev"
-    project_name: "identity-platform"
-    github_repo_name: "idp-infrastructure-terranetes"
-    github_repo_description: "Identity Platform Infrastructure deployed via Terranetes"
-    github_repo_visibility: "private"
+    github_repo_name: "geertvdc/idp-infrastructure-terranetes"
   
   # Terraform execution settings
   enableAutoApproval: false  # Set to true to auto-approve plans

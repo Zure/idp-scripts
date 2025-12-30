@@ -29,13 +29,13 @@ spec:
   ## contextual requirements, i.e database name, size etc.
   inputs:
     - ## Key is the name of the variable in the terraform module
-      key: github_repo_visibility
+      key: github_repo_name
       ## Description is a human readable description of the variable
-      description: Visibility of the GitHub repository
+      description: Name of the GitHub repository
       ## Provides a default value, this can be a simple or complex type
       default: 
         example: string
-        value: private
+        value: idp-infrastructure
         
       ## Is the format for the input
       type: string
@@ -72,39 +72,6 @@ spec:
         
       ## Is the format for the input
       type: string
-    - ## Key is the name of the variable in the terraform module
-      key: project_name
-      ## Description is a human readable description of the variable
-      description: Project name for tagging and naming resources
-      ## Provides a default value, this can be a simple or complex type
-      default: 
-        example: string
-        value: identity-platform
-        
-      ## Is the format for the input
-      type: string
-    - ## Key is the name of the variable in the terraform module
-      key: github_repo_name
-      ## Description is a human readable description of the variable
-      description: Name of the GitHub repository
-      ## Provides a default value, this can be a simple or complex type
-      default: 
-        example: string
-        value: idp-infrastructure
-        
-      ## Is the format for the input
-      type: string
-    - ## Key is the name of the variable in the terraform module
-      key: github_repo_description
-      ## Description is a human readable description of the variable
-      description: Description of the GitHub repository
-      ## Provides a default value, this can be a simple or complex type
-      default: 
-        example: string
-        value: Identity Platform Infrastructure and Configuration
-        
-      ## Is the format for the input
-      type: string
 
   ## Configuration is the template for the resource; the final cloud resource
   ## will be a combination of user defined variables above and the template
@@ -113,6 +80,21 @@ spec:
     ## Is the location of the terraform module; this can be a git repository,
     ## terraform registry and so forth.
     module: https://github.com/Zure/idp-scripts
+    ## Is the provider for the module, this is optional as the provider can be
+    ## defined in the cloud resource itself
+    providerRef:
+      name: azure
+    variables: 
+      github_repo_description: Identity Platform Infrastructure and Configuration
+      github_repo_topics:
+      - terraform
+      - opentofu
+      - azure
+      - infrastructure
+      - iac
+      github_repo_visibility: private
+      project_name: identity-platform
+      
 
     ## Is the name of the secret contains the outputs from the terraform module
     writeConnectionSecretToRef:

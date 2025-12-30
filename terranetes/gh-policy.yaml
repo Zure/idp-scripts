@@ -1,0 +1,18 @@
+apiVersion: terraform.appvia.io/v1alpha1
+kind: Policy
+metadata:
+  name: default-github-credentials
+spec:
+  summary: Inject GitHub credentials into Terranetes runs for selected namespaces/modules
+  defaults:
+    - selector:
+        # Only apply to modules matching these regexes
+        modules:
+          - github.com/Zure/.*  # adjust if you want to scope tighter
+        # Only apply to namespaces that opt in via a label
+        namespace:
+          matchLabels:
+            terranetes.appvia.io/github-token: "true"
+      # Secrets are injected into the job (so env vars like GITHUB_TOKEN are available)
+      secrets:
+        - github-credentials
