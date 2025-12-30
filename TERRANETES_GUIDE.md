@@ -1,21 +1,33 @@
 # Terranetes Deployment Guide
 
-This guide walks you through deploying your Terraform/OpenTofu module using Terranetes in a Kubernetes cluster.
+This guide walks you through deploying your OpenTofu/Terraform module using Terranetes in a Kubernetes cluster.
 
 ## Table of Contents
+- [Overview](#overview)
 - [Prerequisites](#prerequisites)
-- [Step 1: Create a Kind Cluster](#step-1-create-a-kind-cluster)
-- [Step 2: Install Terranetes in the Cluster](#step-2-install-terranetes-in-the-cluster)
-- [Step 3: Install Terranetes CLI Locally](#step-3-install-terranetes-cli-locally)
-- [Step 4: Prepare Your Module for Terranetes](#step-4-prepare-your-module-for-terranetes)
-- [Step 5: Generate CloudResource from the TF Module](#step-5-generate-cloudresource-from-the-tf-module)
-- [Step 6: Deploy the Module in the Cluster](#step-6-deploy-the-module-in-the-cluster)
-- [Troubleshooting](#troubleshooting)
+- [Quick Start](#quick-start)
+- [Manual Setup](#manual-setup)
+  - [Step 1: Create Kind Cluster](#step-1-create-kind-cluster)
+  - [Step 2: Install Terranetes](#step-2-install-terranetes)
+  - [Step 3: Install Terranetes CLI](#step-3-install-terranetes-cli)
+  - [Step 4: Create Secrets](#step-4-create-secrets)
+  - [Step 5: Deploy with Revision + CloudResource](#step-5-deploy-with-revision--cloudresource)
+- [Understanding the Setup](#understanding-the-setup)
+- [Important: Provider and Backend Configuration](#important-provider-and-backend-configuration)
+- [Monitoring and Troubleshooting](#monitoring-and-troubleshooting)
 - [Cleanup](#cleanup)
+
+## Overview
+
+This repository contains OpenTofu/Terraform code that provisions:
+- **Azure Resource Group** - For organizing Azure resources
+- **GitHub Repository** - For infrastructure code
+
+The deployment uses **Terranetes**, a Kubernetes operator that runs Terraform/OpenTofu in a GitOps-friendly way.
 
 ## Prerequisites
 
-Before starting, ensure you have the following installed:
+Before starting, ensure you have installed:
 
 - **Docker Desktop** (required for Kind)
 - **kubectl** - Kubernetes command-line tool
@@ -25,23 +37,45 @@ Before starting, ensure you have the following installed:
 ### Install Prerequisites (macOS)
 
 ```bash
-# Install kubectl
-brew install kubectl
-
-# Install Helm
-brew install helm
-
-# Install Kind
-brew install kind
+brew install kubectl helm kind
 ```
 
-## Step 1: Create a Kind Cluster
+## Quick Start
 
-Create a local Kubernetes cluster using Kind:
+The fastest way to get started is using the automated setup script:
 
 ```bash
-# Create a cluster named 'terranetes'
-kind create cluster --name terranetes
+cd terranetes
+./setup-complete.sh
+```
+
+This script will:
+1. ✅ Create a Kind cluster named 'terranetes'
+2. ✅ Install Terranetes controller
+3. ✅ Install Terranetes CLI (tnctl)
+4. ✅ Prompt you to create Azure and GitHub credentials
+
+After setup completes, deploy your infrastructure:
+
+```bash
+./deploy.sh
+```
+
+That's it! Skip to [Monitoring and Troubleshooting](#monitoring-and-troubleshooting) section.
+
+---
+
+## Manual Setup
+
+If you prefer to understand each step or the automated script fails, follow these manual steps.
+
+### Step 1: Create Kind Cluster
+
+Create a local Kubernetes cluster using Kind with the provided configuration:
+
+```bash
+# Create cluster using the provided configuration
+kind create cluster --config terranetes/kind-config.yaml
 
 # Verify the cluster is running
 kubectl cluster-info --context kind-terranetes
@@ -50,799 +84,473 @@ kubectl cluster-info --context kind-terranetes
 kubectl get nodes
 ```
 
-### Optional: Create with Custom Configuration
+The `kind-config.yaml` configures:
+- Cluster name: `terranetes`
+- Exposed ports: 30000-30001 for services
+- Node labels for ingress support
 
-For more control, create a Kind configuration file:
+### Step 2: Install Terranetes
 
-```yaml
-# kind-config.yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: terranetes
-nodes:
-- role: control-plane
-  extraPortMappings:
-  - containerPort: 30000
-    hostPort: 30000
-    protocol: TCP
-```
-
-Then create the cluster:
+Install the Terranetes controller using Helm:
 
 ```bash
-kind create cluster --config kind-config.yaml
-```
-
-## Step 2: Install Terranetes in the Cluster
-
-Terranetes is installed using Helm charts.
-
-### Add Terranetes Helm Repository
-
-```bash
-# Add the Terranetes Helm repository
+# Add Terranetes Helm repository
 helm repo add appvia https://terranetes-controller.appvia.io
-
-# Update Helm repositories
 helm repo update
-```
 
-### Install Terranetes Controller
-
-```bash
-# Create a namespace for Terranetes
+# Create namespace for Terranetes
 kubectl create namespace terranetes-system
 
-# Install the Terranetes controller
+# Install Terranetes controller
 helm install terranetes-controller appvia/terranetes-controller \
   --namespace terranetes-system \
   --set controller.costs.enabled=false
 
-# Verify the installation
-kubectl get pods -n terranetes-system
-
-# Wait for the controller to be ready
+# Wait for controller to be ready
 kubectl wait --for=condition=ready pod \
   -l app.kubernetes.io/name=terranetes-controller \
   -n terranetes-system \
   --timeout=300s
 ```
 
-### Verify CRDs are Installed
+Verify CRDs are installed:
 
 ```bash
-# Check that Terranetes Custom Resource Definitions are installed
-kubectl get crds | grep terraform
+kubectl get crds | grep terraform.appvia.io
 ```
 
-You should see CRDs like:
+You should see:
 - `cloudresources.terraform.appvia.io`
 - `configurations.terraform.appvia.io`
 - `plans.terraform.appvia.io`
 - `policies.terraform.appvia.io`
 - `providers.terraform.appvia.io`
+- `revisions.terraform.appvia.io`
 
-## Step 3: Install Terranetes CLI Locally
+### Step 3: Install Terranetes CLI
 
-The Terranetes CLI (`tnctl`) helps manage Terraform resources in Kubernetes.
-
-### Install tnctl (macOS)
+The Terranetes CLI (`tnctl`) helps manage and troubleshoot deployments:
 
 ```bash
-# Download the latest release for macOS
-curl -L https://github.com/appvia/terranetes-controller/releases/latest/download/tnctl-darwin-arm64 -o tnctl
+# Detect architecture
+if [[ $(uname -m) == "arm64" ]]; then
+    ARCH="arm64"
+else
+    ARCH="amd64"
+fi
 
-# Make it executable
+# Download latest release
+TNCTL_VERSION=$(curl -s https://api.github.com/repos/appvia/terranetes-controller/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+
+curl -L "https://github.com/appvia/terranetes-controller/releases/download/${TNCTL_VERSION}/tnctl-darwin-${ARCH}" -o tnctl
+
+# Install
 chmod +x tnctl
-
-# Move to PATH
 sudo mv tnctl /usr/local/bin/
 
-# Verify installation
-tnctl --version
+# Verify
+tnctl version
 ```
 
-## Step 4: Prepare Your Module for Terranetes
+### Step 4: Create Secrets
 
-### Create a Git Repository (if not already done)
-
-Terranetes can reference modules from Git repositories or use inline modules.
-
-```bash
-# Initialize git if not already done
-git init
-
-# Add all files
-git add .
-
-# Commit
-git commit -m "Initial commit"
-
-# Push to GitHub (update with your repo URL)
-git remote add origin https://github.com/geertvdc/idp-infrastructure.git
-git push -u origin main
-```
-
-### Create Kubernetes Secrets for Provider Credentials
-
-Terranetes needs credentials to provision Azure resources.
+Terranetes needs credentials for Azure and GitHub. Secrets must be created in the `terranetes-system` namespace.
 
 #### Azure Credentials
 
 ```bash
-# Create a service principal for Azure (if you don't have one)
 az ad sp create-for-rbac \
   --name "terranetes-sp" \
   --role Contributor \
   --scopes /subscriptions/<YOUR_SUBSCRIPTION_ID>
 
-# This will output:
-# {
-#   "appId": "xxx",
-#   "displayName": "terranetes-sp",
-#   "password": "xxx",
-#   "tenant": "xxx"
-# }
 
-# Create Kubernetes secret with Azure credentials in terranetes-system namespace
 kubectl create secret generic azure-credentials \
   --namespace terranetes-system \
-  --from-literal=ARM_CLIENT_ID=<appId> \
-  --from-literal=ARM_CLIENT_SECRET=<password> \
-  --from-literal=ARM_SUBSCRIPTION_ID=<subscription-id> \
-  --from-literal=ARM_TENANT_ID=<tenant>
+  --from-literal=ARM_CLIENT_ID=<your-client-id> \
+  --from-literal=ARM_CLIENT_SECRET=<your-client-secret> \
+  --from-literal=ARM_SUBSCRIPTION_ID=<your-subscription-id> \
+  --from-literal=ARM_TENANT_ID=<your-tenant-id>
+
 ```
 
 #### GitHub Credentials
 
 ```bash
-# Create a GitHub personal access token
-# Go to: https://github.com/settings/tokens
-# Generate a token with 'repo' scope
+# Create a GitHub Personal Access Token at:
+# https://github.com/settings/tokens
+# Required scopes: 'repo' (full control of private repositories)
 
-# Best practice: Create the secret in terranetes-system for centralized secret management
 kubectl create secret generic github-credentials \
   --namespace terranetes-system \
   --from-literal=GITHUB_TOKEN=<your-github-token>
-
-# Verify the secret was created
-kubectl get secret github-credentials -n terranetes-system
 ```
 
-#### Important Namespace Rules
-
-- **Provider secrets** (`secretRef`) → Must be in `terranetes-system` namespace (where controller runs)
-- **Configuration secrets** (`valueFrom`) → Can be in ANY namespace (specify with `namespace` field)
-  - If `namespace` is omitted, defaults to same namespace as the Configuration
-
-**Recommended approach for centralized secret management:**
-- Create ALL secrets in `terranetes-system` namespace
-- Reference them from Configurations using the `namespace` field
-
-This provides:
-- ✅ Centralized secret management
-- ✅ Single source of truth for credentials
-- ✅ Easier secret rotation and auditing
-
-## Step 5: Understanding Terranetes Resource Model
-
-Terranetes supports two approaches for provisioning cloud resources:
-
-### Approach 1: Direct Configuration (Simple)
-- **Configuration** - Defines the Terraform module directly
-- One-to-one mapping to Terraform module
-- Full access to all module variables
-
-### Approach 2: CloudResource + Revision (Managed - Platform Team Recommended)
-- **Revision** - Template that defines what users can customize
-- **Plan** - Collection of Revisions (versions), automatically created
-- **CloudResource** - User-facing resource instance
-- **Configuration** - Auto-created by Terranetes behind the scenes
-
-The **CloudResource approach is recommended for platform teams** because it:
-- Hides complexity from end users
-- Enforces organizational defaults
-- Provides version control over infrastructure templates
-- Allows selective exposure of variables
-
-**We'll use Approach 1 (Direct Configuration) in this guide** for simplicity, but see the [Advanced: CloudResource](#advanced-using-cloudresource-and-revisions) section to learn the platform team approach.
-
-## Step 5: Generate Terranetes Manifests
-
-Now we'll create Kubernetes manifests for Terranetes.
-
-### Create Provider Configuration
-
-First, create a Provider resource for Azure:
-
-```yaml
-# terranetes/provider-azure.yaml
-apiVersion: terraform.appvia.io/v1alpha1
-kind: Provider
-metadata:
-  name: azure
-spec:
-  provider: azurerm
-  source: secret
-  secretRef:
-    name: azure-credentials
-    namespace: terranetes-system
-  summary: Azure credentials for Terranetes
-```
-
-Create a Provider resource for GitHub:
-
-```yaml
-# terranetes/provider-github.yaml
-apiVersion: terraform.appvia.io/v1alpha1
-kind: Provider
-metadata:
-  name: github
-spec:
-  provider: github
-  source: secret
-  secretRef:
-    name: github-credentials
-    namespace: terranetes-system
-  summary: GitHub credentials for Terranetes
-```
-
-**Important:** In Terranetes, the `Provider` resource defines **credential sources**, not Terraform provider versions. The Terraform provider versions (like `hashicorp/azurerm ~> 4.0`) are defined in the `Configuration` resource's module code or Terraform files.
-
-### Create Configuration for Module
-
-Create a Configuration that contains your Terraform module inline:
-
-```yaml
-# terranetes/configuration.yaml
-apiVersion: terraform.appvia.io/v1alpha1
-kind: Configuration
-metadata:
-  name: idp-module
-spec:
-  # Inline Terraform module code
-  module: |
-    resource "azurerm_resource_group" "main" {
-      name     = var.resource_group_name
-      location = var.location
-      
-      tags = {
-        Environment = var.environment
-        Project     = var.project_name
-      }
-    }
-
-    resource "github_repository" "main" {
-      name        = var.github_repo_name
-      description = var.github_repo_description
-      visibility  = var.github_repo_visibility
-      auto_init   = true
-
-      has_issues      = true
-      has_projects    = false
-      has_wiki        = false
-      has_downloads   = true
-      has_discussions = false
-    }
-
-    variable "resource_group_name" {
-      type = string
-      description = "Name of the Azure Resource Group"
-    }
-    
-    variable "location" {
-      type = string
-      description = "Azure region for the Resource Group"
-    }
-    
-    variable "environment" {
-      type = string
-      description = "Environment tag for resources"
-    }
-    
-    variable "project_name" {
-      type = string
-      description = "Project name for tagging and naming resources"
-    }
-    
-    variable "github_repo_name" {
-      type = string
-      description = "Name of the GitHub repository"
-    }
-    
-    variable "github_repo_description" {
-      type = string
-      description = "Description of the GitHub repository"
-    }
-    
-    variable "github_repo_visibility" {
-      type = string
-      description = "Visibility of the GitHub repository"
-    }
-
-  providerRef:
-    name: azure
-
-  # Inject GitHub credentials as environment variables
-  # NOTE: This secret must be in the SAME namespace as this Configuration (default)
-  valueFrom:
-    - secret: github-credentials
-      name: GITHUB_TOKEN
-      key: GITHUB_TOKEN
-```
-
-**Note:** The `providerRef` points to the Provider resource we created (named `azure`), which handles Azure credentials from the `terranetes-system` namespace. For GitHub, we inject the credentials as environment variables using `valueFrom`, referencing the secret in `terranetes-system` using the `namespace` field.
-
-### Alternative: Use Git Repository as Source
-
-Instead of inline code, you can reference a Git repository:
-
-```yaml
-# terranetes/configuration-git.yaml
-apiVersion: terraform.appvia.io/v1alpha1
-kind: Configuration
-metadata:
-  name: idp-module-git
-spec:
-  # Reference your Git repository
-  module: https://github.com/geertvdc/idp-scripts.git?ref=main
-  
-  # Provide variable values
-  variables:
-    resource_group_name: "rg-idp-dev"
-    location: "West Europe"
-    environment: "dev"
-    project_name: "identity-platform"
-    github_repo_name: "idp-infrastructure"
-    github_repo_description: "Identity Platform Infrastructure and Configuration"
-    github_repo_visibility: "private"
-  
-  providerRef:
-    name: azure
-
-  valueFrom:
-    - secret: github-credentials
-      namespace: terranetes-system  # Reference secret from terranetes-system namespace
-      name: GITHUB_TOKEN
-      key: GITHUB_TOKEN
-```
-
-### Create CloudResource Instance
-
-Create a CloudResource that uses the Configuration:
-
-```yaml
-# terranetes/cloudresource.yaml
-apiVersion: terraform.appvia.io/v1alpha1
-kind: CloudResource
-metadata:
-  name: idp-dev-resources
-spec:
-  # Reference the configuration
-  configurationRef:
-    name: idp-module
-  
-  # Override variables
-  variables:
-    resource_group_name: "rg-idp-terranetes-dev"
-    location: "West Europe"
-    environment: "dev"
-    project_name: "identity-platform"
-    github_repo_name: "idp-infrastructure-terranetes"
-    github_repo_description: "Identity Platform Infrastructure deployed via Terranetes"
-    github_repo_visibility: "private"
-  
-  # Terraform execution settings
-  enableAutoApproval: false  # Set to true to auto-approve plans
-  
-  # Write connection details to a secret (optional)
-  writeConnectionSecretToRef:
-    name: idp-connection-details
-```
-
-## Step 6: Deploy Using Direct Configuration
-
-In this section, we'll deploy using the direct Configuration approach (the simpler method).
-
-### Apply Provider Configurations
+#### Verify Secrets
 
 ```bash
-# Create the terranetes directory if not exists
-mkdir -p terranetes
-
-# Apply the providers
-kubectl apply -f terranetes/provider-azure.yaml
-kubectl apply -f terranetes/provider-github.yaml
-
-# Verify providers
-kubectl get providers
+kubectl get secrets -n terranetes-system
 ```
 
-### Apply Configuration
+### Step 5: Deploy with Revision + CloudResource
+
+This repository uses the **Revision + CloudResource** pattern, which is the recommended approach for platform teams.
+
+#### Understanding the Deployment Model
+
+1. **Revision** (`test-idp.yaml`) - A versioned template created by the platform team
+   - Contains the Terraform module reference
+   - Defines which variables users can customize
+   - Sets platform defaults
+   - Version: `v0.0.1`
+
+2. **Plan** - Automatically created by grouping Revisions
+   - All Revisions with `spec.plan.name: test-idp` form a Plan
+   - Users reference the Plan to get the latest version
+
+3. **Provider** (`provider-azure.yaml`) - Credentials for Azure
+   - References the `azure-credentials` secret
+
+4. **CloudResource** (`cloudresource.yaml`) - The actual deployment instance
+   - References the Plan and Revision
+   - Provides user-customizable values
+   - Creates Azure Resource Group and GitHub Repository
+
+5. **Configuration** - Created automatically by Terranetes
+   - You don't manage this directly
+
+#### Deploy the Resources
 
 ```bash
-# Apply the configuration
-kubectl apply -f terranetes/configuration.yaml
+cd terranetes
 
-# Verify configuration
-kubectl get configurations
+# 1. Apply the Azure provider
+kubectl apply -f provider-azure.yaml
 
-# Monitor the deployment
-kubectl describe configuration idp-module
+# 2. Apply the Revision (this creates the Plan automatically)
+kubectl apply -f test-idp.yaml
+
+# 3. Apply the Policy (for GitHub credentials injection)
+kubectl apply -f gh-policy.yaml
+
+# 4. Apply the CloudResource
+kubectl apply -f cloudresource.yaml
 ```
 
-The Configuration will automatically:
-1. Create a Terraform workspace
-2. Initialize Terraform with the specified module
-3. Generate a plan
-4. Wait for approval (if `enableAutoApproval` is false)
-
-### Monitor the Deployment
+#### Monitor Deployment
 
 ```bash
-# Check the status of your Configuration
-kubectl describe configuration idp-module
+# Check CloudResource status
+kubectl get cloudresources
 
-# View the Terraform plan
-kubectl get jobs -l terraform.appvia.io/configuration=idp-module
+# Detailed status
+kubectl describe cloudresource idp-dev-resources -n apps
 
-# View the logs of the Terraform job
-kubectl logs -l terraform.appvia.io/configuration=idp-module -f
-
-# Check if the Configuration is ready
-kubectl get configurations
+# View Terraform plan/apply logs
+kubectl get pods
+kubectl logs <pod-name> -f
 ```
 
-### Approve the Plan (if auto-approval is disabled)
+#### Approve the Plan
 
-If you set `enableAutoApproval: false` in the Configuration, you'll need to manually approve:
+Since `enableAutoApproval: false` in the CloudResource, you need to approve manually:
 
 ```bash
-# Approve using tnctl
-tnctl approve configuration idp-module
+# Option 1: Using tnctl
+tnctl approve cloudresource idp-dev-resources
 
-# Or approve using kubectl
-kubectl patch configuration idp-module \
+# Option 2: Using kubectl
+kubectl patch cloudresource idp-dev-resources \
   --type merge \
   -p '{"spec":{"enableAutoApproval":true}}'
 ```
 
-### Check the Outputs
+## Understanding the Setup
 
-```bash
-# Once applied, check the configuration status
-kubectl get configuration idp-module -o yaml
+### What Gets Deployed?
 
-# Check if outputs are stored (if writeConnectionSecretToRef is configured)
-kubectl get secret idp-connection-details -o yaml
-```
+The CloudResource provisions:
 
-## Advanced: Using CloudResource and Revisions
+1. **Azure Resource Group**
+   - Name: Customizable via `resource_group_name` variable
+   - Location: Customizable via `location` variable
 
-The **CloudResource + Revision approach is recommended for platform teams** who want to provide managed infrastructure templates to end users.
+2. **GitHub Repository**
+   - Name: Customizable via `github_repo_name` variable
+   - Description: Set in Revision as default
+   - Visibility: Set in Revision as `private`
+   - Topics: `terraform`, `opentofu`, `azure`, `infrastructure`, `iac`
 
-### Understanding the Model
+### Revision Structure
 
-When using CloudResources:
+The `test-idp.yaml` Revision exposes these inputs to users:
 
-1. **Revision** - A curated template created by platform team
-   - Contains the Terraform module reference
-   - Defines platform defaults
-   - Specifies which variables users can override
-   - Versioned using SemVer
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `resource_group_name` | Azure RG name | `rg-idp-dev` |
+| `location` | Azure region | `West Europe` |
+| `environment` | Environment tag | `dev` |
+| `github_repo_name` | GitHub repo name | `idp-infrastructure` |
 
-2. **Plan** - Automatically created by grouping Revisions
-   - All Revisions with same `spec.plan.name` form a Plan
-   - Plans track versions using SemVer
-   - Users can reference specific versions or "latest"
+The Revision also sets **platform defaults** that users cannot override:
+- `github_repo_description`: "Identity Platform Infrastructure and Configuration"
+- `github_repo_visibility`: `private`
+- `github_repo_topics`: Array of relevant topics
+- `project_name`: `identity-platform`
 
-3. **CloudResource** - User-facing resource instance
-   - References a Revision (or Plan for latest version)
-   - Users only see exposed variables
-   - Platform defaults are enforced
+### GitHub Credentials Injection
 
-4. **Configuration** - Created automatically in the background
-   - Terranetes creates this from Revision + CloudResource
-   - Users don't interact with it directly
-
-### Step 1: Create a Revision
-
-Use `tnctl` to create a Revision from your Terraform module:
-
-```bash
-# Create a Revision from your local module
-tnctl create revision . \
-  --name database \
-  --revision v1.0.0 \
-  --description "PostgreSQL database for applications" \
-  --provider azure \
-  --file terranetes/revision-database-v1.yaml
-
-# Or from a Git repository
-tnctl create revision https://github.com/terraform-aws-modules/terraform-aws-rds?ref=v5.9.0 \
-  --name rds-database \
-  --revision v5.9.0 \
-  --provider aws \
-  --file terranetes/revision-rds-v5.yaml
-```
-
-This command:
-- Analyzes your Terraform module
-- Extracts all variables
-- Creates a Revision CRD with all inputs exposed
-- Saves it to a file for you to customize
-
-### Step 2: Customize the Revision
-
-Edit the generated Revision to:
-- Set platform defaults
-- Hide sensitive/complex variables from users
-- Add categories and better descriptions
+The `gh-policy.yaml` Policy automatically injects GitHub credentials into Terraform runs:
 
 ```yaml
-# terranetes/revision-database-v1.yaml
-apiVersion: terraform.appvia.io/v1alpha1
-kind: Revision
-metadata:
-  name: database-v1-0-0
 spec:
-  # Plan metadata
-  plan:
-    name: database           # Groups all versions together
-    revision: v1.0.0         # SemVer version
-    description: "Managed PostgreSQL database with backups"
-    categories: [database, postgresql, azure]
+  defaults:
+    - selector:
+        modules:
+          - github.com/Zure/.*
+        namespace:
+          matchLabels:
+            terranetes.appvia.io/github-token: "true"
+      secrets:
+        - github-credentials
+```
+
+This means:
+- Modules from `github.com/Zure/*` get GitHub credentials automatically
+- Only namespaces with the label `terranetes.appvia.io/github-token: "true"` get credentials
+- The `github-credentials` secret is injected as environment variables
+
+**Important:** To use this, label your namespace:
+
+```bash
+kubectl label namespace default terranetes.appvia.io/github-token=true
+```
+
+## Important: Provider and Backend Configuration
+
+When using Terranetes, you **MUST NOT** define `provider` blocks or `backend` blocks in your Terraform code.
+
+### ❌ WRONG - Do Not Include These
+
+```hcl
+# DON'T include this in providers.tf
+provider "azurerm" {
+  features {}
+}
+
+# DON'T include this in versions.tf
+terraform {
+  backend "azurerm" {
+    # ...
+  }
+}
+```
+
+### ✅ CORRECT - What You Should Have
+
+Your `providers.tf` should only have providers that are NOT managed by Terranetes Provider resources:
+
+```hcl
+# Configure the GitHub Provider
+# GitHub credentials come from Policy injection
+provider "github" {
+  # Token is automatically set via GITHUB_TOKEN environment variable
+}
+```
+
+Your `versions.tf` should have **NO backend block**:
+
+```hcl
+terraform {
+  required_version = ">= 1.0"
   
-  # Variables users CAN customize
-  inputs:
-    - key: database_name
-      description: "Name of the database"
-      required: true
-    
-    - key: database_size
-      description: "Database size tier"
-      required: false
-      default:
-        value: "small"  # Platform default
-    
-    - key: backup_retention_days
-      description: "Number of days to retain backups"
-      required: false
-      default:
-        value: "7"  # Platform default
+  # NO backend configuration - Terranetes uses Kubernetes backend
   
-  # Terraform module and defaults
-  configuration:
-    module: https://github.com/your-org/terraform-azure-database.git?ref=v1.0.0
-    
-    providerRef:
-      name: azure
-    
-    # Platform-enforced defaults (users cannot override)
-    variables:
-      enable_ssl: "true"
-      enable_backups: "true"
-      backup_geo_replication: "true"
-      min_tls_version: "TLS1_2"
-    
-    writeConnectionSecretToRef:
-      name: database-connection
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+    github = {
+      source  = "integrations/github"
+      version = "~> 6.0"
+    }
+  }
+}
 ```
 
-### Step 3: Apply the Revision
+### Why?
+
+Terranetes automatically:
+1. **Injects the provider configuration** via `provider.tf.json` using credentials from the Provider resource
+2. **Configures the backend** via `backend.tf.json` to store state in Kubernetes secrets
+
+If you define these blocks, you'll get errors:
+- `Error: Duplicate provider configuration`
+- `Error: Duplicate backend configuration`
+
+## Monitoring and Troubleshooting
+
+### Check CloudResource Status
 
 ```bash
-# Apply the Revision
-kubectl apply -f terranetes/revision-database-v1.yaml
+# List all CloudResources
+kubectl get cloudresources -n apps
 
-# Verify the Revision
-kubectl get revisions
+# Get detailed status
+kubectl describe cloudresource idp-dev-resources -n apps
 
-# Check if a Plan was created automatically
-kubectl get plans
-
-# View the Plan details
-kubectl describe plan database
+# Watch for changes
+kubectl get cloudresources -w
 ```
 
-The Plan is automatically created by Terranetes and groups all Revisions with `spec.plan.name: database`.
-
-### Step 4: Create a CloudResource
-
-End users now create CloudResources that reference the Revision or Plan:
-
-```yaml
-# user-database.yaml
-apiVersion: terraform.appvia.io/v1alpha1
-kind: CloudResource
-metadata:
-  name: my-app-database
-spec:
-  # Reference the plan (gets latest version)
-  plan:
-    name: database
-  
-  # Or reference a specific revision
-  # revision: v1.0.0
-  
-  # Users only provide the exposed inputs
-  variables:
-    database_name: "myapp-prod-db"
-    database_size: "large"
-    backup_retention_days: "30"
-```
-
-### Step 5: Deploy the CloudResource
+### View Terraform Logs
 
 ```bash
-# User applies their CloudResource
-kubectl apply -f user-database.yaml
-
-# Monitor the CloudResource
-kubectl get cloudresources
-
-kubectl describe cloudresource my-app-database
-
-# Approve if needed
-tnctl approve cloudresource my-app-database
-```
-
-Behind the scenes, Terranetes:
-1. Looks up the Plan "database"
-2. Finds the latest Revision (v1.0.0)
-3. Merges user variables with platform defaults
-4. Creates a managed Configuration
-5. Runs Terraform
-
-### Benefits of CloudResource Approach
-
-**For Platform Teams:**
-- Enforce organizational standards
-- Control what users can modify
-- Version infrastructure templates
-- Validate inputs before deployment
-
-**For End Users:**
-- Simple, curated interface
-- No need to understand complex Terraform
-- Self-service infrastructure provisioning
-- Clear documentation of what can be customized
-
-### Version Management
-
-Create new versions as your infrastructure evolves:
-
-```bash
-# Create v1.1.0 with new features
-tnctl create revision https://github.com/your-org/terraform-azure-database.git?ref=v1.1.0 \
-  --name database \
-  --revision v1.1.0 \
-  --provider azure \
-  --file terranetes/revision-database-v1.1.yaml
-
-# Apply the new Revision
-kubectl apply -f terranetes/revision-database-v1.1.yaml
-
-# Users can now upgrade by changing their CloudResource
-# Either reference specific version:
-#   revision: v1.1.0
-# Or keep using latest:
-#   plan: { name: database }  # automatically uses v1.1.0 now
-```
-
-### Validate Revisions
-
-Use `tnctl` to validate Revisions before deploying:
-
-```bash
-# Validate a Revision
-tnctl verify revision terranetes/revision-database-v1.yaml
-
-# With actual credentials to test Terraform plan
-export ARM_CLIENT_ID=xxx
-export ARM_CLIENT_SECRET=xxx
-tnctl verify revision terranetes/revision-database-v1.yaml --use-terraform-plan
-```
-
-## Troubleshooting
-
-### Check Controller Logs
-
-```bash
-# View Terranetes controller logs
-kubectl logs -n terranetes-system -l app.kubernetes.io/name=terranetes-controller -f
-```
-
-### Check Job Pods
-
-```bash
-# List all jobs created by Terranetes
-kubectl get jobs
-
-# Check pod status
+# List pods
 kubectl get pods
 
-# View logs from a specific job
-kubectl logs job/<job-name>
+# Find the Terraform job pod
+kubectl get pods -l terraform.appvia.io/configuration
+
+# View logs
+kubectl logs -l terraform.appvia.io/configuration -f
+```
+
+### Check Terranetes Controller Logs
+
+```bash
+kubectl logs -n terranetes-system -l app.kubernetes.io/name=terranetes-controller -f
 ```
 
 ### Common Issues
 
-1. **Provider Authentication Failures**
-   - Verify secrets are created correctly: `kubectl get secrets -n terranetes-system`
-   - Check secret contents: `kubectl describe secret -n terranetes-system azure-credentials`
+#### 1. Provider Authentication Failures
 
-2. **Plan Not Generating**
-   - Check Configuration status: `kubectl describe configuration idp-module`
-   - Verify provider references are correct
+**Symptoms:**
+- Terraform fails with "Error: building account" or authentication errors
 
-3. **Module Source Issues**
-   - Ensure Git repository is accessible
-   - For private repos, add SSH keys or tokens
-
-### Debugging with tnctl
-
-For **Configuration** approach:
-
+**Solution:**
 ```bash
-# Get detailed status
-tnctl describe configuration idp-module
+# Verify secrets exist
+kubectl get secret -n terranetes-system azure-credentials
+kubectl get secret -n terranetes-system github-credentials
 
-# View logs
-tnctl logs configuration idp-module
+# Check secret contents (base64 encoded)
+kubectl get secret -n terranetes-system azure-credentials -o yaml
 
-# Force a reconciliation
-kubectl annotate configuration idp-module terraform.appvia.io/reconcile="$(date +%s)"
+# Recreate secrets if incorrect
+kubectl delete secret -n terranetes-system azure-credentials
+kubectl create secret generic azure-credentials \
+  --namespace terranetes-system \
+  --from-literal=ARM_CLIENT_ID=<correct-value> \
+  # ... other values
 ```
 
-For **CloudResource** approach:
+#### 2. Duplicate Provider Configuration
+
+**Symptoms:**
+```
+Error: Duplicate provider configuration
+  on providers.tf line 4:
+   4: provider "azurerm" {
+```
+
+**Solution:**
+Remove the `provider "azurerm"` block from your `providers.tf` file. Terranetes injects this automatically.
+
+#### 3. Provider Version Mismatch
+
+**Symptoms:**
+```
+Error: Failed to resolve provider packages
+  locked provider registry.opentofu.org/hashicorp/azurerm 3.117.1 does not match configured version constraint ~> 4.0
+```
+
+**Solution:**
+```bash
+# Update the lock file
+cd /path/to/terraform-code
+tofu init -upgrade -reconfigure
+git add .terraform.lock.hcl
+git commit -m "Update provider lock file"
+git push
+```
+
+#### 4. Module Not Found
+
+**Symptoms:**
+- Error: "Failed to download module"
+
+**Solution:**
+- Ensure your Git repository URL in the Revision is correct
+- Verify the repository is public OR credentials are properly configured
+- Check the repository reference (branch/tag) exists
+
+#### 5. Plan Not Generating
+
+**Symptoms:**
+- CloudResource stays in "Pending" state
+
+**Solution:**
+```bash
+# Check CloudResource events
+kubectl describe cloudresource idp-dev-resources
+
+# Check if Revision exists
+kubectl get revisions
+
+# Check if Plan was created
+kubectl get plans
+
+# Force reconciliation
+kubectl annotate cloudresource idp-dev-resources \
+  terraform.appvia.io/reconcile="$(date +%s)"
+```
+
+### Using tnctl for Debugging
 
 ```bash
-# Get detailed status
-tnctl describe cloudresource my-app-database
+# Get detailed CloudResource info
+tnctl describe cloudresource idp-dev-resources
 
 # View logs
-tnctl logs cloudresource my-app-database
+tnctl logs cloudresource idp-dev-resources
 
-# Verify the Revision
-tnctl verify revision terranetes/revision-database-v1.yaml
+# Approve plan
+tnctl approve cloudresource idp-dev-resources
 
-# Force a reconciliation
-kubectl annotate cloudresource my-app-database terraform.appvia.io/reconcile="$(date +%s)"
+# Verify a Revision
+tnctl verify revision terranetes/test-idp.yaml
 ```
 
 ## Cleanup
 
-### For Direct Configuration Approach
+### Delete CloudResource (Destroys Infrastructure)
 
 ```bash
-# Delete the Configuration (this will destroy the Terraform resources)
-kubectl delete configuration idp-module
-
-# Monitor deletion
-kubectl get configurations -w
-```
-
-### For CloudResource Approach
-
-```bash
-# Delete the CloudResource (this will destroy the Terraform resources)
-kubectl delete cloudresource my-app-database
+# This will run 'terraform destroy' on your resources
+kubectl delete cloudresource idp-dev-resources
 
 # Monitor deletion
 kubectl get cloudresources -w
-
-# Optionally delete Revisions and Plans
-kubectl delete revision database-v1-0-0
-kubectl get plans  # Plans are auto-deleted when all Revisions are removed
 ```
 
-### Delete Providers and Secrets
+### Delete Terranetes Resources
 
 ```bash
-kubectl delete provider azure
-kubectl delete provider github
+cd terranetes
 
+# Delete in reverse order
+kubectl delete -f cloudresource.yaml
+kubectl delete -f test-idp.yaml
+kubectl delete -f gh-policy.yaml
+kubectl delete -f provider-azure.yaml
+```
+
+### Delete Secrets
+
+```bash
 kubectl delete secret -n terranetes-system azure-credentials
 kubectl delete secret -n terranetes-system github-credentials
 ```
@@ -850,38 +558,123 @@ kubectl delete secret -n terranetes-system github-credentials
 ### Uninstall Terranetes
 
 ```bash
-# Uninstall the Helm release
+# Uninstall Helm release
 helm uninstall terranetes-controller -n terranetes-system
 
-# Delete the namespace
+# Delete namespace
 kubectl delete namespace terranetes-system
 ```
 
 ### Delete Kind Cluster
 
 ```bash
-# Delete the entire cluster
+# Delete entire cluster
 kind delete cluster --name terranetes
 ```
 
-## Next Steps
+## Advanced Topics
 
-- **GitOps Integration**: Integrate with ArgoCD or Flux for GitOps workflows
-- **Policy Management**: Use Terranetes Policies to enforce compliance
-- **Cost Management**: Enable cost estimation features
-- **Multi-Environment**: Create separate CloudResources for dev/staging/prod
-- **CI/CD Integration**: Automate deployments with GitHub Actions or Jenkins
+### Updating the Revision
+
+To make changes to the infrastructure template:
+
+1. Edit `terranetes/test-idp.yaml`
+2. Increment the version (e.g., `v0.0.1` → `v0.0.2`)
+3. Apply the new Revision:
+
+```bash
+kubectl apply -f terranetes/test-idp.yaml
+```
+
+4. Update CloudResources to use the new version:
+
+```yaml
+spec:
+  plan:
+    name: test-idp
+    revision: v0.0.2  # Specify new version
+```
+
+### Creating a New Revision from Scratch
+
+Use `tnctl` to generate a Revision from your Terraform module:
+
+```bash
+# From local directory
+tnctl create revision . \
+  --name test-idp \
+  --revision v0.1.0 \
+  --description "IDP Infrastructure" \
+  --provider azure \
+  --file terranetes/test-idp-v0.1.0.yaml
+
+# From Git repository
+tnctl create revision https://github.com/geertvdc/idp-scripts \
+  --name test-idp \
+  --revision v0.1.0 \
+  --provider azure \
+  --file terranetes/test-idp-v0.1.0.yaml
+```
+
+This will analyze your Terraform module and generate a Revision with all variables as inputs.
+
+### GitOps Integration
+
+Terranetes works great with GitOps tools like ArgoCD or Flux:
+
+1. Store your Terranetes manifests in Git
+2. Configure ArgoCD/Flux to sync the `terranetes/` directory
+3. Changes to CloudResources trigger automatic Terraform runs
+4. Use `enableAutoApproval: true` for fully automated deployments
+
+### Multi-Environment Deployments
+
+Create separate CloudResources for each environment:
+
+```bash
+# terranetes/cloudresource-dev.yaml
+apiVersion: terraform.appvia.io/v1alpha1
+kind: CloudResource
+metadata:
+  name: idp-dev-resources
+spec:
+  plan:
+    name: test-idp
+    revision: v0.0.1
+  variables:
+    resource_group_name: "rg-idp-dev"
+    environment: "dev"
+
+# terranetes/cloudresource-prod.yaml
+apiVersion: terraform.appvia.io/v1alpha1
+kind: CloudResource
+metadata:
+  name: idp-prod-resources
+spec:
+  plan:
+    name: test-idp
+    revision: v0.0.1  # Or a stable version
+  variables:
+    resource_group_name: "rg-idp-prod"
+    environment: "prod"
+  enableAutoApproval: false  # Require manual approval for prod
+```
 
 ## Additional Resources
 
 - [Terranetes Documentation](https://terranetes-controller.appvia.io/)
-- [Terranetes GitHub Repository](https://github.com/appvia/terranetes-controller)
+- [Terranetes GitHub](https://github.com/appvia/terranetes-controller)
 - [Kind Documentation](https://kind.sigs.k8s.io/)
-- [Kubernetes Documentation](https://kubernetes.io/docs/home/)
+- [OpenTofu Documentation](https://opentofu.org/)
 
-## Notes
+## Summary
 
-- The module uses both Azure and GitHub providers, requiring credentials for both
-- Terranetes runs Terraform in Kubernetes Jobs, providing isolation and scalability
-- State is stored in Kubernetes ConfigMaps by default (can be configured to use remote backends)
-- CloudResources can be managed via GitOps tools for declarative infrastructure management
+This guide covered:
+- ✅ Setting up a Kind cluster with Terranetes
+- ✅ Creating and managing credentials
+- ✅ Using the Revision + CloudResource pattern
+- ✅ Understanding provider and backend configuration requirements
+- ✅ Troubleshooting common issues
+- ✅ Cleaning up resources
+
+For quick deployments, use the automated scripts in the `terranetes/` directory!

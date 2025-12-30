@@ -9,10 +9,10 @@ spec:
   providerRef:
     name: azure
   variables:
-    resource_group_name: "rg-idp-terranetes-dev3"
+    resource_group_name: "rg-idp-terranetes-dev4"
     location: "West Europe"
     environment: "dev"
-    github_repo_name: "geertvdc/idp-infrastructure-terranetes"
+    github_repo_name: "idp-infrastructure-terranetes"
   
   # Terraform execution settings
   enableAutoApproval: false  # Set to true to auto-approve plans
