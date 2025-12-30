@@ -9,7 +9,7 @@ spec:
   providerRef:
     name: azure
   variables:
-    resource_group_name: "rg-idp-terranetes-dev2"
+    resource_group_name: "rg-idp-terranetes-dev3"
     location: "West Europe"
     environment: "dev"
     github_repo_name: "geertvdc/idp-infrastructure-terranetes"
