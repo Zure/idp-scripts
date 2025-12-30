@@ -3,8 +3,9 @@ kind: Provider
 metadata:
   name: github
 spec:
-  source: integrations/github
-  version: "~> 6.0"
-  # Reference the GitHub credentials secret
-  preloadSecrets:
-    - github-credentials
+  provider: github
+  source: secret
+  secretRef:
+    name: github-credentials
+    namespace: terranetes-system
+  summary: GitHub credentials for Terranetes

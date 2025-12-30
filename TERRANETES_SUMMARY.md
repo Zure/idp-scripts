@@ -23,12 +23,15 @@ This document summarizes the complete Terranetes setup for deploying your Terraf
 ### Kubernetes Manifests (terranetes/)
 
 3. **provider-azure.yaml** - Azure provider configuration
+   - Defines credential source for Azure
    - References `azure-credentials` secret
-   - Version: ~> 4.0
+   - Provider type: azurerm
 
-4. **provider-github.yaml** - GitHub provider configuration
+4. **provider-github.yaml** - GitHub provider configuration (optional)
+   - Defines credential source for GitHub
    - References `github-credentials` secret
-   - Version: ~> 6.0
+   - Provider type: github
+   - Note: Can also use auth directly in Configuration
 
 5. **configuration.yaml** - Terraform module configuration
    - Contains inline module definition
@@ -176,17 +179,65 @@ If you prefer more control, follow the [TERRANETES_GUIDE.md](TERRANETES_GUIDE.md
 
 ## 🔑 Key Concepts
 
-### CloudResource
-The primary resource you'll interact with. It represents a Terraform module instance with specific variable values.
+### Two Approaches for Using Terranetes
 
-### Configuration
-Defines the Terraform module source code (inline or from Git) and its variable definitions.
+**Approach 1: Direct Configuration (Simple)**
+- Use `Configuration` resources directly
+- One-to-one mapping to Terraform modules
+- Best for: Testing, simple deployments, direct control
 
-### Provider
-Defines Terraform providers (like azurerm, github) with their versions and authentication requirements.
+**Approach 2: CloudResource + Revision (Platform Engineering)**
+- Use `Revision` templates created by platform team
+- `CloudResource` instances created by end users
+- Best for: Multi-tenant environments, self-service, enforcing standards
 
-### Secrets
-Store sensitive credentials for cloud providers. Referenced by CloudResources and Configurations.
+### Resource Types Explained
+
+#### Provider
+Defines **credential sources** for cloud providers (like Azure, AWS, GCP). This is NOT where you specify Terraform provider versions - those go in the Configuration's module code. The Provider resource tells Terranetes how to authenticate with cloud vendors.
+
+#### Configuration (Direct Approach)
+- Defines the Terraform module source code (inline or from Git)
+- Contains all variable definitions and provider references
+- Users work with Configurations directly for simple use cases
+
+#### Revision (Platform Engineering Approach)
+- A versioned template created by platform teams
+- Contains Terraform module reference and platform defaults
+- Specifies which variables end users can override
+- Uses SemVer versioning (e.g., v1.0.0, v1.1.0)
+- Multiple Revisions with the same `plan.name` form a Plan
+
+#### Plan (Auto-created)
+- Automatically created by grouping Revisions with the same name
+- Tracks all available versions using SemVer
+- Users can reference a Plan to get the latest version
+- Example: All Revisions with `spec.plan.name: database` form the "database" Plan
+
+#### CloudResource (User-Facing in Platform Engineering)
+- User-facing resource that references a Revision or Plan
+- Users only see and configure exposed variables
+- Platform defaults are automatically enforced
+- Terranetes creates a managed Configuration behind the scenes
+
+#### Secrets
+Store sensitive credentials for cloud providers. Referenced by Providers and Configurations.
+
+### How It Works: Two Workflows
+
+**Direct Configuration Workflow:**
+```
+Developer → Configuration → Terraform Execution → Cloud Resources
+```
+
+**Platform Engineering Workflow:**
+```
+Platform Team → Revision (template)
+                    ↓
+            Plan (auto-created)
+                    ↓
+End User → CloudResource → Managed Configuration (auto-created) → Terraform Execution → Cloud Resources
+```
 
 ## 📝 What Makes This Different from Traditional Terraform?
 

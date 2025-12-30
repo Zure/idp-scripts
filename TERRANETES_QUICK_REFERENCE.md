@@ -62,7 +62,7 @@ kubectl get cloudresources -w
 kubectl describe cloudresource idp-dev-resources
 
 # View all Terranetes resources
-kubectl get providers,configurations,cloudresources
+kubectl get providers,configurations,revisions,cloudresources
 
 # Check Terranetes controller logs
 kubectl logs -n terranetes-system -l app.kubernetes.io/name=terranetes-controller -f
@@ -75,6 +75,10 @@ kubectl get jobs
 
 # View specific job logs
 kubectl logs job/<job-name>
+
+# Check revisions
+kubectl get revisions
+kubectl describe revision <revision-name>
 ```
 
 ## Management Commands
@@ -116,11 +120,11 @@ kubectl get configurations
 kubectl describe configuration idp-module
 
 # Verify secrets exist
-kubectl get secrets azure-credentials github-credentials
+kubectl get secrets -n terranetes-system azure-credentials github-credentials
 
 # Check secret contents
-kubectl describe secret azure-credentials
-kubectl describe secret github-credentials
+kubectl describe secret -n terranetes-system azure-credentials
+kubectl describe secret -n terranetes-system github-credentials
 
 # Get CloudResource YAML
 kubectl get cloudresource idp-dev-resources -o yaml
@@ -161,7 +165,7 @@ kubectl delete configuration idp-module
 kubectl delete provider azurerm github
 
 # Delete secrets
-kubectl delete secret azure-credentials github-credentials idp-connection-details
+kubectl delete secret -n terranetes-system azure-credentials github-credentials idp-connection-details
 
 # Uninstall Terranetes
 helm uninstall terranetes-controller -n terranetes-system
@@ -177,20 +181,26 @@ kind delete cluster --name terranetes
 # Show version
 tnctl version
 
+# List available commands
+tnctl --help
+
 # Describe CloudResource
 tnctl describe cloudresource idp-dev-resources
 
 # Verify Configuration
 tnctl verify configuration idp-module
 
-# Generate CloudResource template
-tnctl generate cloudresource \
-  --name my-resource \
-  --module . \
-  > cloudresource.yaml
+# Create a new revision from a Configuration
+tnctl create revision idp-module
 
-# Approve CloudResource
+# Approve a CloudResource (to proceed with apply)
 tnctl approve cloudresource idp-dev-resources
+
+# Search for configurations
+tnctl search configuration
+
+# View logs from a CloudResource
+tnctl logs cloudresource idp-dev-resources
 ```
 
 ## Useful Aliases

@@ -3,82 +3,15 @@ kind: Configuration
 metadata:
   name: idp-module
 spec:
-  # Inline module definition
-  # Alternative: use module: https://github.com/geertvdc/idp-infrastructure.git
+  # Inline Terraform module code
   module: |
-    terraform {
-      required_version = ">= 1.0"
-      
-      required_providers {
-        azurerm = {
-          source  = "hashicorp/azurerm"
-          version = "~> 4.0"
-        }
-        github = {
-          source  = "integrations/github"
-          version = "~> 6.0"
-        }
-      }
-    }
-
-    provider "azurerm" {
-      features {}
-    }
-
-    provider "github" {
-      # Credentials provided via environment variables from secrets
-    }
-
-    variable "resource_group_name" {
-      description = "Name of the Azure Resource Group"
-      type        = string
-      default     = "rg-idp-dev"
-    }
-
-    variable "location" {
-      description = "Azure region for the Resource Group"
-      type        = string
-      default     = "West Europe"
-    }
-
-    variable "environment" {
-      description = "Environment tag for resources"
-      type        = string
-      default     = "dev"
-    }
-
-    variable "project_name" {
-      description = "Project name for tagging and naming resources"
-      type        = string
-      default     = "identity-platform"
-    }
-
-    variable "github_repo_name" {
-      description = "Name of the GitHub repository"
-      type        = string
-      default     = "idp-infrastructure"
-    }
-
-    variable "github_repo_description" {
-      description = "Description of the GitHub repository"
-      type        = string
-      default     = "Identity Platform Infrastructure and Configuration"
-    }
-
-    variable "github_repo_visibility" {
-      description = "Visibility of the GitHub repository"
-      type        = string
-      default     = "private"
-    }
-
     resource "azurerm_resource_group" "main" {
       name     = var.resource_group_name
       location = var.location
-
+      
       tags = {
         Environment = var.environment
         Project     = var.project_name
-        ManagedBy   = "Terranetes"
       }
     }
 
@@ -95,33 +28,47 @@ spec:
       has_discussions = false
     }
 
-    output "resource_group_id" {
-      description = "The ID of the Resource Group"
-      value       = azurerm_resource_group.main.id
+    variable "resource_group_name" {
+      type = string
+      description = "Name of the Azure Resource Group"
+    }
+    
+    variable "location" {
+      type = string
+      description = "Azure region for the Resource Group"
+    }
+    
+    variable "environment" {
+      type = string
+      description = "Environment tag for resources"
+    }
+    
+    variable "project_name" {
+      type = string
+      description = "Project name for tagging and naming resources"
+    }
+    
+    variable "github_repo_name" {
+      type = string
+      description = "Name of the GitHub repository"
+    }
+    
+    variable "github_repo_description" {
+      type = string
+      description = "Description of the GitHub repository"
+    }
+    
+    variable "github_repo_visibility" {
+      type = string
+      description = "Visibility of the GitHub repository"
     }
 
-    output "resource_group_name" {
-      description = "The name of the Resource Group"
-      value       = azurerm_resource_group.main.name
-    }
-
-    output "github_repo_url" {
-      description = "The URL of the GitHub repository"
-      value       = github_repository.main.html_url
-    }
-
-    output "github_repo_ssh_url" {
-      description = "The SSH URL of the GitHub repository"
-      value       = github_repository.main.ssh_clone_url
-    }
-
-  # Provider references
   providerRef:
-    name: azurerm
+    name: azure
 
-  # Authentication secrets
-  auth:
-    - secret:
-        name: azure-credentials
-    - secret:
-        name: github-credentials
+  # Inject GitHub credentials as environment variables
+  # NOTE: This secret MUST be in the SAME namespace as this Configuration (default)
+  valueFrom:
+    - secret: github-credentials
+      name: GITHUB_TOKEN
+      key: GITHUB_TOKEN

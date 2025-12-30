@@ -1,10 +1,11 @@
 apiVersion: terraform.appvia.io/v1alpha1
 kind: Provider
 metadata:
-  name: azurerm
+  name: azure
 spec:
-  source: hashicorp/azurerm
-  version: "~> 4.0"
-  # Reference the Azure credentials secret
-  preloadSecrets:
-    - azure-credentials
+  provider: azurerm
+  source: secret
+  secretRef:
+    name: azure-credentials
+    namespace: terranetes-system
+  summary: Azure credentials for Terranetes
